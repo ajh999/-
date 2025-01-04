@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Motion Detection</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #000;
+        }
+        .container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+        }
+        video, canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        #motionCanvas {
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <video id="video" autoplay playsinline></video>
+        <canvas id="canvas"></canvas>
+        <canvas id="motionCanvas"></canvas>
+    </div>
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const motionCanvas = document.getElementById('motionCanvas');
+        const ctx = canvas.getContext('2d');
+        const motionCtx = motionCanvas.getContext('2d');
+
+        const width = 640;
+        const height = 480;
+
+        canvas.width = motionCanvas.width = width;
+        canvas.height = motionCanvas.height = height;
+
+        // 1. 카메라 스트림 가져오기
+        navigator.mediaDevices.getUserMedia({ video: true })
+            .then(stream => {
+                video.srcObject = stream;
+            })
+            .catch(err => console.error('Error accessing the camera:', err));
+
+        // 2. 이전 프레임 데이터 저장
+        let previousFrame = null;
+
+        function detectMotion() {
+            ctx.drawImage(video, 0, 0, width, height);
+
+            // 현재 프레임 가져오기
+            const currentFrame = ctx.getImageData(0, 0, width, height);
+
+            if (previousFrame) {
+                // 차이 계산
+                const diff = calculateFrameDifference(previousFrame.data, currentFrame.data);
+
+                // 모션 히트박스 렌더링
+                renderBoundingBox(diff);
+            }
+
+            previousFrame = currentFrame;
+
+            requestAnimationFrame(detectMotion);
+        }
+
+        function calculateFrameDifference(prevData, currData) {
+            const motionPixels = [];
+            for (let i = 0; i < prevData.length; i += 4) {
+                const rDiff = Math.abs(prevData[i] - currData[i]);
+                const gDiff = Math.abs(prevData[i + 1] - currData[i + 1]);
+                const bDiff = Math.abs(prevData[i + 2] - currData[i + 2]);
+
+                const totalDiff = (rDiff + gDiff + bDiff) / 3;
+
+                if (totalDiff > 50) { // 감도 조정
+                    const pixelIndex = i / 4; // 픽셀 인덱스
+                    const x = pixelIndex % width;
+                    const y = Math.floor(pixelIndex / width);
+                    motionPixels.push({ x, y });
+                }
+            }
+            return motionPixels;
+        }
+
+        function renderBoundingBox(motionPixels) {
+            if (motionPixels.length === 0) {
+                motionCtx.clearRect(0, 0, width, height);
+                return;
+            }
+
+            // 히트박스의 가장자리 계산
+            const xCoords = motionPixels.map(p => p.x);
+            const yCoords = motionPixels.map(p => p.y);
+            const minX = Math.min(...xCoords);
+            const maxX = Math.max(...xCoords);
+            const minY = Math.min(...yCoords);
+            const maxY = Math.max(...yCoords);
+
+            // 모션 캔버스에 히트박스 그리기
+            motionCtx.clearRect(0, 0, width, height);
+
+            // 내부 채우기
+            motionCtx.fillStyle = 'rgba(255, 0, 0, 0.2)'; // 연한 빨강색
+            motionCtx.fillRect(minX, minY, maxX - minX, maxY - minY);
+
+            // 테두리 그리기
+            motionCtx.strokeStyle = 'rgba(255, 0, 0, 0.8)'; // 진한 빨강색
+            motionCtx.lineWidth = 2;
+            motionCtx.strokeRect(minX, minY, maxX - minX, maxY - minY);
+        }
+
+        // 모션 감지 시작
+        video.addEventListener('play', () => {
+            detectMotion();
+        });
+    </script>
+</body>
+</html>
